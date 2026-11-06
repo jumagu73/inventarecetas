@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventa Recetas 🍳</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg, #fff5e6, #ffe0b2);
+    min-height: 100vh;
+    padding: 2rem 1rem;
+    color: #3e2723;
+  }
+  .container { max-width: 720px; margin: 0 auto; }
+  h1 { text-align: center; font-size: 2.2rem; margin-bottom: .3rem; }
+  .subtitle { text-align: center; color: #8d6e63; margin-bottom: 2rem; }
+  .card {
+    background: white;
+    border-radius: 20px;
+    padding: 1.5rem;
+    box-shadow: 0 10px 30px rgba(0,0,0,.08);
+    margin-bottom: 1.5rem;
+  }
+  label { font-weight: 600; display: block; margin-bottom: .8rem; }
+  .inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .7rem; }
+  input[type="text"] {
+    padding: .8rem 1rem;
+    border: 2px solid #ffe0b2;
+    border-radius: 12px;
+    font-size: 1rem;
+    outline: none;
+    transition: border .2s;
+  }
+  input[type="text"]:focus { border-color: #ff9800; }
+  button {
+    width: 100%;
+    margin-top: 1.2rem;
+    padding: 1rem;
+    background: linear-gradient(135deg, #ff9800, #f57c00);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform .15s, box-shadow .2s;
+  }
+  button:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(255,152,0,.4); }
+  button:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+  #resultado { display: none; }
+  #resultado.visible { display: block; animation: fadeIn .5s; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .receta-titulo { font-size: 1.5rem; color: #e65100; margin-bottom: .3rem; }
+  .receta-meta { color: #8d6e63; font-size: .9rem; margin-bottom: 1rem; }
+  h3 { margin: 1.2rem 0 .5rem; color: #bf360c; }
+  ul, ol { padding-left: 1.4rem; line-height: 1.7; }
+  .tip { background: #fff8e1; border-left: 4px solid #ffc107; padding: .8rem 1rem; border-radius: 8px; margin-top: 1rem; font-size: .95rem; }
+  .error { background: #ffebee; color: #c62828; padding: .8rem 1rem; border-radius: 8px; margin-top: 1rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🍳 Inventa Recetas</h1>
+  <p class="subtitle">Dame 5 ingredientes y te invento una receta</p>
+
+  <div class="card">
+    <label>Ingresa tus 5 ingredientes:</label>
+    <div class="inputs" id="inputs"></div>
+    <button id="btnInventar">✨ Inventar receta</button>
+  </div>
+
+  <div class="card" id="resultado"></div>
+</div>
+
+<script>
+// ---- Configuración ----
+// Pega aquí tu API key de Gemini si quieres usar IA (https://aistudio.google.com/apikey)
+const GEMINI_API_KEY = ""; // déjalo vacío para usar el modo offline
+const MODELO = "gemini-2.0-flash";
+
+// ---- Generar inputs ----
+const inputsDiv = document.getElementById("inputs");
+for (let i = 1; i <= 5; i++) {
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.placeholder = `Ingrediente ${i}`;
+  inp.className = "ingrediente";
+  inputsDiv.appendChild(inp);
+}
+
+// ---- Modo offline: generador con plantillas ----
+function inventarOffline(ingredientes) {
+  const [a, b, c, d, e] = ingredientes;
+  const tecnicas = ["salteado rápido", "al horno", "a la sartén", "guisado suave", "gratinado"];
+  const tecnica = tecnicas[Math.floor(Math.random() * tecnicas.length)];
+  const estilos = ["casero", "mediterráneo", "asiático fusión", "de temporada", "rústico"];
+  const estilo = estilos[Math.floor(Math.random() * estilos.length)];
+  const nombre = `${capitalize(a)} ${tecnica} con ${b} y ${c}`;
+
+  return {
+    titulo: nombre,
+    meta: `Estilo ${estilo} · 25 min · 2 personas`,
+    ingredientes: [...ingredientes, "aceite de oliva", "sal", "pimienta negra"],
+    pasos: [
+      `Lava y corta ${a}, ${b} y ${c} en trozos medianos. Reserva ${d} y ${e} para el final.`,
+      `Calienta un poco de aceite de oliva en una sartén amplia a fuego medio-alto.`,
+      `Añade ${a} y sofríe 3-4 minutos hasta que empiece a dorarse.`,
+      `Incorpora ${b} y ${c}. Cocina 5 minutos removiendo de vez en cuando.`,
+      `Agrega ${d} y ${e}, salpimienta al gusto y cocina ${tecnica.includes("horno") ? "12 min a 200°C" : "6-8 min más"}.`,
+      `Prueba y ajusta de sal. Sirve caliente y ¡a disfrutar!`
+    ],
+    tip: `Un chorrito de limón o unas hierbas frescas (perejil, albahaca) realzarán mucho el sabor.`
+  };
+}
+
+function capitalize(s) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// ---- Modo IA con Gemini ----
+async function inventarConIA(ingredientes) {
+  const prompt = `Eres un chef creativo. Inventa UNA receta original usando OBLIGATORIAMENTE estos 5 ingredientes: ${ingredientes.join(", ")}. 
+Puedes añadir básicos de despensa (sal, aceite, especias). 
+Devuelve SOLO un JSON válido, sin markdown, con esta forma exacta:
+{
+  "titulo": "nombre creativo del plato",
+  "meta": "estilo · tiempo · comensales (ej: 'Fusión asiática · 30 min · 2 personas')",
+  "ingredientes": ["lista completa incluyendo cantidades aproximadas"],
+  "pasos": ["paso 1", "paso 2", "..."],
+  "tip": "un consejo del chef"
+}
+Responde en español.`;
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODELO}:generateContent?key=${GEMINI_API_KEY}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 1.0, responseMimeType: "application/json" }
+    })
+  });
+  if (!res.ok) throw new Error("Error de la API: " + res.status);
+  const data = await res.json();
+  const texto = data.candidates[0].content.parts[0].text;
+  return JSON.parse(texto);
+}
+
+// ---- Render ----
+function renderReceta(r) {
+  const div = document.getElementById("resultado");
+  div.innerHTML = `
+    <h2 class="receta-titulo">🍽️ ${r.titulo}</h2>
+    <p class="receta-meta">${r.meta}</p>
+    <h3>Ingredientes</h3>
+    <ul>${r.ingredientes.map(i => `<li>${i}</li>`).join("")}</ul>
+    <h3>Preparación</h3>
+    <ol>${r.pasos.map(p => `<li>${p}</li>`).join("")}</ol>
+    ${r.tip ? `<div class="tip">💡 <strong>Tip del chef:</strong> ${r.tip}</div>` : ""}
+  `;
+  div.classList.add("visible");
+  div.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderError(msg) {
+  const div = document.getElementById("resultado");
+  div.innerHTML = `<div class="error">${msg}</div>`;
+  div.classList.add("visible");
+}
+
+// ---- Evento principal ----
+document.getElementById("btnInventar").addEventListener("click", async () => {
+  const ingredientes = [...document.querySelectorAll(".ingrediente")]
+    .map(i => i.value.trim())
+    .filter(Boolean);
+
+  if (ingredientes.length < 5) {
+    renderError("Por favor completa los 5 ingredientes 🙂");
+    return;
+  }
+
+  const btn = document.getElementById("btnInventar");
+  btn.disabled = true;
+  btn.textContent = "👨‍🍳 Cocinando ideas...";
+
+  try {
+    let receta;
+    if (GEMINI_API_KEY) {
+      receta = await inventarConIA(ingredientes);
+    } else {
+      await new Promise(r => setTimeout(r, 600)); // simula "pensar"
+      receta = inventarOffline(ingredientes);
+    }
+    renderReceta(receta);
+  } catch (err) {
+    console.error(err);
+    renderError("No se pudo generar la receta. Revisa tu API key o inténtalo de nuevo.");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "✨ Inventar receta";
+  }
+});
+</script>
+</body>
+</html>
